@@ -1,0 +1,2358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>FlameVision - 森林火灾检测</title>
+  <meta name="description" content="基于 YOLO26n 的实时森林火灾与烟雾检测系统" />
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet" />
+  <style>
+    :root {
+      --bg-deep: #040d08;
+      --bg-primary: #071a10;
+      --bg-secondary: #0a2416;
+      --bg-tertiary: #0d301e;
+      --bg-card: rgba(10, 48, 28, 0.65);
+      --bg-card-hover: rgba(14, 60, 36, 0.75);
+      --bg-glass: rgba(10, 48, 28, 0.4);
+      --border: rgba(16, 185, 129, 0.15);
+      --border-active: rgba(16, 185, 129, 0.4);
+      --border-glow: rgba(16, 185, 129, 0.3);
+      --text-primary: #e8f8f0;
+      --text-secondary: #a8d8c0;
+      --text-muted: #5a9a7a;
+      --accent-primary: #10b981;
+      --accent-secondary: #059669;
+      --accent-tertiary: #047857;
+      --accent-glow: rgba(16, 185, 129, 0.25);
+      --accent-glow-strong: rgba(16, 185, 129, 0.4);
+      --fire-color: #ef4444;
+      --smoke-color: #94a3b8;
+      --default-color: #f59e0b;
+      --shadow-soft: 0 4px 24px rgba(0, 0, 0, 0.4);
+      --shadow-card: 0 8px 40px rgba(0, 0, 0, 0.5);
+      --shadow-glow: 0 0 40px rgba(16, 185, 129, 0.15);
+      --gradient-mesh: radial-gradient(ellipse at 20% 0%, rgba(16, 185, 129, 0.12) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 100%, rgba(5, 150, 105, 0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 50%, rgba(16, 185, 129, 0.05) 0%, transparent 70%);
+      --sidebar-width: 400px;
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 20px;
+      --radius-xl: 28px;
+    }
+
+    /* Auto theme based on system preference */
+    @media (prefers-color-scheme: light) {
+      :root:not([data-theme]) {
+        --bg-deep: #f8fdf9;
+        --bg-primary: #f0faf5;
+        --bg-secondary: #e0f5ea;
+        --bg-tertiary: #c8edda;
+        --bg-card: rgba(255, 255, 255, 0.95);
+        --bg-card-hover: rgba(255, 255, 255, 1);
+        --bg-glass: rgba(255, 255, 255, 0.8);
+        --border: rgba(16, 185, 129, 0.2);
+        --border-active: rgba(16, 185, 129, 0.5);
+        --border-glow: rgba(16, 185, 129, 0.4);
+        --text-primary: #071a10;
+        --text-secondary: #047857;
+        --text-muted: #10b981;
+        --accent-primary: #059669;
+        --accent-secondary: #10b981;
+        --accent-tertiary: #34d399;
+        --accent-glow: rgba(16, 185, 129, 0.2);
+        --accent-glow-strong: rgba(16, 185, 129, 0.35);
+        --shadow-soft: 0 4px 24px rgba(0, 60, 30, 0.08);
+        --shadow-card: 0 8px 40px rgba(0, 0, 0, 0.15);
+        --shadow-glow: 0 0 40px rgba(16, 185, 129, 0.1);
+        --gradient-mesh: radial-gradient(ellipse at 20% 0%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
+          radial-gradient(ellipse at 80% 100%, rgba(5, 150, 105, 0.05) 0%, transparent 50%),
+          radial-gradient(ellipse at 50% 50%, rgba(16, 185, 129, 0.03) 0%, transparent 70%);
+      }
+    }
+
+    /* Light theme override */
+    :root[data-theme='light'] {
+      --bg-deep: #f8fdf9;
+      --bg-primary: #f0faf5;
+      --bg-secondary: #e0f5ea;
+      --bg-tertiary: #c8edda;
+      --bg-card: rgba(255, 255, 255, 0.95);
+      --bg-card-hover: rgba(255, 255, 255, 1);
+      --bg-glass: rgba(255, 255, 255, 0.8);
+      --border: rgba(16, 185, 129, 0.2);
+      --border-active: rgba(16, 185, 129, 0.5);
+      --border-glow: rgba(16, 185, 129, 0.4);
+      --text-primary: #071a10;
+      --text-secondary: #047857;
+      --text-muted: #10b981;
+      --accent-primary: #059669;
+      --accent-secondary: #10b981;
+      --accent-tertiary: #34d399;
+      --accent-glow: rgba(16, 185, 129, 0.2);
+      --accent-glow-strong: rgba(16, 185, 129, 0.35);
+      --shadow-soft: 0 4px 24px rgba(0, 60, 30, 0.08);
+      --shadow-card: 0 8px 40px rgba(0, 0, 0, 0.15);
+      --shadow-glow: 0 0 40px rgba(16, 185, 129, 0.1);
+      --gradient-mesh: radial-gradient(ellipse at 20% 0%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 100%, rgba(5, 150, 105, 0.05) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 50%, rgba(16, 185, 129, 0.03) 0%, transparent 70%);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html {
+      font-size: 16px;
+    }
+
+    body {
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow: hidden;
+      line-height: 1.5;
+      transition: background 0.4s ease, color 0.4s ease;
+    }
+
+    .app-container {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-primary);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .app-container::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--gradient-mesh);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .grid-pattern {
+      position: absolute;
+      inset: 0;
+      background-image: linear-gradient(rgba(16, 185, 129, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(16, 185, 129, 0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.6;
+    }
+
+    /* Header */
+    .header {
+      height: 64px;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      position: relative;
+      z-index: 100;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      position: relative;
+    }
+
+    .logo-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .logo-icon::after {
+      content: '';
+      position: absolute;
+      inset: -4px;
+      background: var(--accent-glow);
+      border-radius: 50%;
+      filter: blur(12px);
+      opacity: 0.6;
+      z-index: -1;
+    }
+
+    .logo-text {
+      display: flex;
+      flex-direction: column;
+      gap: 0px;
+    }
+
+    .logo-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .logo-subtitle {
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--text-muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .header-center {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .time-display {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      padding: 6px 14px;
+      background: var(--bg-glass);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: relative;
+    }
+
+    .icon-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: var(--radius-md);
+      background: var(--bg-glass);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .icon-btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, var(--accent-glow) 0%, transparent 100%);
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+
+    .icon-btn:hover {
+      border-color: var(--border-active);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-glow);
+    }
+
+    .icon-btn:hover::before {
+      opacity: 1;
+    }
+
+    .icon-btn svg {
+      width: 20px;
+      height: 20px;
+      color: var(--text-secondary);
+      transition: color 0.25s ease;
+      position: relative;
+      z-index: 1;
+    }
+
+    .icon-btn:hover svg {
+      color: var(--accent-primary);
+    }
+
+    .icon-btn.active {
+      border-color: var(--border-active);
+      background: var(--bg-card-hover);
+    }
+
+    /* Theme menu */
+    .theme-menu {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-card);
+      padding: 6px;
+      min-width: 160px;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-8px);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .theme-menu.show {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+
+    .theme-menu-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 10px 12px;
+      border: none;
+      background: none;
+      font-family: 'Outfit', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      transition: all 0.15s ease;
+    }
+
+    .theme-menu-item:hover {
+      background: var(--bg-glass);
+    }
+
+    .theme-menu-item.active {
+      background: var(--bg-glass);
+      color: var(--accent-primary);
+    }
+
+    .theme-menu-item svg {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+
+    .theme-menu-item .check {
+      margin-left: auto;
+      width: 16px;
+      height: 16px;
+      opacity: 0;
+    }
+
+    .theme-menu-item.active .check {
+      opacity: 1;
+      color: var(--accent-primary);
+    }
+
+    /* Main */
+    .main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+      position: relative;
+      z-index: 1;
+      padding: 20px;
+      gap: 20px;
+    }
+
+    .content-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-width: 0;
+    }
+
+    /* CameraSection */
+    .camera-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      overflow: hidden;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      position: relative;
+      box-shadow: var(--shadow-card);
+    }
+
+    .camera-section::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-glow), transparent);
+    }
+
+    .camera-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(0, 0, 0, 0.1);
+    }
+
+    [data-theme='light'] .camera-header {
+      background: #fff;
+    }
+
+    .camera-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .camera-title h2 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .fps-badge {
+      font-family: 'Space Grotesk', monospace;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent-primary);
+      padding: 4px 12px;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      border-radius: var(--radius-lg);
+    }
+
+    .video-wrapper {
+      flex: 1;
+      position: relative;
+      background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .video-wrapper video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+
+    .video-wrapper.active video {
+      display: block;
+    }
+
+    .video-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px;
+      width: 100%;
+      height: 100%;
+    }
+
+    .video-placeholder-icon {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 20px;
+      border-radius: 50%;
+      background: var(--bg-glass);
+      border: 2px dashed var(--border-active);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .video-placeholder-icon svg {
+      width: 36px;
+      height: 36px;
+      color: var(--text-muted);
+    }
+
+    .video-placeholder h3 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    .video-placeholder p {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .detection-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .detection-box {
+      position: absolute;
+      border: 2px solid;
+      border-radius: var(--radius-sm);
+      background: rgba(0, 0, 0, 0.15);
+    }
+
+    .detection-label {
+      position: absolute;
+      top: -26px;
+      left: -2px;
+      padding: 4px 10px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      color: #fff;
+      white-space: nowrap;
+      border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    .camera-controls {
+      display: flex;
+      gap: 10px;
+      padding: 14px 20px;
+      background: rgba(0, 0, 0, 0.15);
+      border-top: 1px solid var(--border);
+    }
+
+    [data-theme='light'] .camera-controls {
+      background: #fff;
+    }
+
+    /* Buttons */
+    .btn {
+      height: 44px;
+      border-radius: var(--radius-md);
+      font-family: 'Outfit', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      border: none;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .btn-primary {
+      flex: 1;
+      background: linear-gradient(135deg, #34d399 0%, #10b981 50%, #059669 100%);
+      color: #fff;
+      box-shadow: 0 4px 20px rgba(16, 185, 129, 0.35);
+    }
+
+    .btn-primary::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, transparent 0%, rgba(255, 255, 255, 0.2) 100%);
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 30px rgba(16, 185, 129, 0.45);
+    }
+
+    .btn-primary:hover::before {
+      opacity: 1;
+    }
+
+    .btn-primary:active {
+      transform: translateY(0) scale(0.98);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-secondary {
+      padding: 0 20px;
+      background: var(--bg-glass);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(10px);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-active);
+    }
+
+    .btn-secondary:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn-danger {
+      padding: 0 20px;
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.25);
+      border-color: rgba(239, 68, 68, 0.5);
+    }
+
+    /* File input hidden */
+    .file-input-hidden {
+      display: none;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: var(--sidebar-width);
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      overflow: hidden;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: var(--shadow-card);
+    }
+
+    .sidebar-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      background: rgba(0, 0, 0, 0.1);
+      flex-shrink: 0;
+    }
+
+    [data-theme='light'] .sidebar-tabs {
+      background: #fff;
+    }
+
+    .sidebar-tab {
+      flex: 1;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: none;
+      border: none;
+      font-family: 'Outfit', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border-bottom: 2px solid transparent;
+    }
+
+    .sidebar-tab svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .sidebar-tab.active {
+      color: var(--accent-primary);
+      border-bottom-color: var(--accent-primary);
+      background: rgba(16, 185, 129, 0.05);
+    }
+
+    .sidebar-content {
+      flex: 1;
+      overflow: hidden;
+      min-height: 0;
+      position: relative;
+    }
+
+    .sidebar-panel {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(30px);
+      transition: transform 0.38s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.28s ease;
+    }
+
+    .sidebar-panel.active {
+      transform: translateX(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .sidebar-panel.slide-out-left {
+      transform: translateX(-60px);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .sidebar-panel.slide-out-right {
+      transform: translateX(60px);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* Map */
+    .map-wrapper {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 0;
+      position: relative;
+    }
+
+    .map-container {
+      position: relative;
+      flex: 1;
+      min-height: 200px;
+      overflow: hidden;
+    }
+
+    .map-container .leaflet-container {
+      width: 100%;
+      height: 100%;
+      background: var(--bg-secondary);
+    }
+
+    .map-info-section {
+      flex-shrink: 0;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .map-placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-secondary);
+      color: var(--text-muted);
+      z-index: 1000;
+      pointer-events: none;
+    }
+
+    .map-placeholder svg {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 12px;
+      opacity: 0.5;
+    }
+
+    .map-placeholder.hidden {
+      display: none;
+    }
+
+    .map-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    .map-actions .btn {
+      flex: 1;
+      min-width: 60px;
+      font-size: 12px;
+      height: 38px;
+    }
+
+    .map-actions #clearPath {
+      flex: 0.5;
+    }
+
+    .map-actions .btn-primary:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none;
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--text-muted);
+      box-shadow: none;
+    }
+
+    .coords-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      padding: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    .coord-item {
+      padding: 10px;
+      background: var(--bg-glass);
+      border-radius: var(--radius-md);
+      text-align: center;
+    }
+
+    .coord-label {
+      font-size: 13px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .coord-value {
+      font-family: 'Space Grotesk', monospace;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-top: 2px;
+    }
+
+    .fire-point-card {
+      margin: 12px 12px 15px;
+      padding: 14px;
+      background: var(--bg-glass);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+
+    .fire-point-card.alert {
+      background: rgba(239, 68, 68, 0.12);
+      border-color: rgba(239, 68, 68, 0.4);
+      box-shadow: 0 0 20px rgba(239, 68, 68, 0.15);
+      animation: pulse-fire 1.5s ease-in-out infinite;
+    }
+
+    .fire-point-label {
+      font-size: 13px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .fire-point-card.alert .fire-point-label {
+      color: rgba(239, 68, 68, 0.8);
+    }
+
+    .fire-point-value {
+      font-family: 'Space Grotesk', monospace;
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-top: 4px;
+    }
+
+    .fire-point-card.alert .fire-point-value {
+      color: var(--fire-color);
+    }
+
+    @keyframes pulse-fire {
+
+      0%,
+      100% {
+        box-shadow: 0 0 20px rgba(239, 68, 68, 0.15);
+      }
+
+      50% {
+        box-shadow: 0 0 30px rgba(239, 68, 68, 0.3);
+      }
+    }
+
+    /* Toggle switch */
+    .toggle-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px;
+    }
+
+    .toggle-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--accent-primary);
+      white-space: nowrap;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 40px;
+      height: 22px;
+      border-radius: 11px;
+      background: transparent;
+      border: 1px solid var(--accent-primary);
+      cursor: pointer;
+      transition: all 0.25s ease;
+      flex-shrink: 0;
+    }
+
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent-primary);
+      transition: all 0.25s ease;
+    }
+
+    .toggle-switch.active::after {
+      left: 20px;
+      background: var(--accent-primary);
+    }
+
+    /* Log panel */
+    .log-panel {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .log-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .log-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .log-clear {
+      background: none;
+      border: none;
+      font-size: 12px;
+      color: var(--fire-color);
+      cursor: pointer;
+      font-family: 'Outfit', sans-serif;
+    }
+
+    .log-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .log-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .log-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+      color: var(--text-muted);
+    }
+
+    .log-empty svg {
+      width: 40px;
+      height: 40px;
+      margin-bottom: 12px;
+      opacity: 0.4;
+    }
+
+    .log-entry {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: var(--bg-glass);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      margin-bottom: 8px;
+      transition: all 0.2s ease;
+    }
+
+    .log-entry:hover {
+      border-color: var(--border-active);
+    }
+
+    .log-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .log-entry-details {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .log-entry-class {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .log-entry-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .log-entry-conf {
+      font-family: 'Space Grotesk', monospace;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    /* Footer */
+    .footer {
+      height: 56px;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+      position: relative;
+      z-index: 100;
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #fbbf24;
+      position: relative;
+    }
+
+    .status-dot::after {
+      content: '';
+      position: absolute;
+      inset: -3px;
+      border-radius: 50%;
+      background: inherit;
+      opacity: 0.4;
+      filter: blur(4px);
+    }
+
+    .status-dot.ready {
+      background: var(--accent-primary);
+      animation: pulse-ready 2s ease-in-out infinite;
+    }
+
+    .status-dot.error {
+      background: var(--fire-color);
+    }
+
+    .status-text {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+
+    @keyframes pulse-ready {
+
+      0%,
+      100% {
+        transform: scale(1);
+        opacity: 1;
+      }
+
+      50% {
+        transform: scale(1.2);
+        opacity: 0.8;
+      }
+    }
+
+    /* Map expand/collapse button */
+    .map-expand-btn {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius-md);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 2000;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: var(--shadow-card);
+    }
+
+    .map-expand-btn:hover {
+      border-color: var(--border-active);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-glow);
+      background: var(--bg-card-hover);
+    }
+
+    .map-expand-btn:active {
+      transform: translateY(0) scale(0.95);
+    }
+
+    .map-expand-btn svg {
+      width: 22px;
+      height: 22px;
+      color: var(--text-primary);
+      transition: transform 0.3s ease;
+    }
+
+    .map-expand-btn.active svg {
+      transform: rotate(180deg);
+    }
+
+    /* Mobile responsive */
+    @media (max-width:768px) {
+      .main {
+        flex-direction: column;
+        padding: 12px;
+        gap: 12px;
+        overflow-y: auto;
+      }
+
+      .header {
+        padding: 0 12px;
+      }
+
+      .header-center {
+        display: none;
+      }
+
+      .logo-title {
+        font-size: 16px;
+      }
+
+      .logo-subtitle {
+        font-size: 9px;
+      }
+
+      .footer {
+        padding: 0 12px;
+      }
+
+      .map-actions .btn {
+        font-size: 11px;
+      }
+
+      .time-display {
+        font-size: 13px;
+        padding: 4px 10px;
+      }
+
+      /* Top area: fixed camera section */
+      .content-area {
+        flex: 0 0 45vh;
+        min-height: 260px;
+        max-height: 55vh;
+      }
+
+      .camera-section {
+        height: 100%;
+      }
+
+      .camera-controls {
+        flex-wrap: wrap;
+        padding: 10px;
+      }
+
+      .camera-controls .btn {
+        font-size: 12px;
+        height: 40px;
+      }
+
+      /* Bottom area: sidebar fills remaining height */
+      .sidebar {
+        width: 100%;
+        flex: 1;
+        min-height: 0;
+      }
+
+      .sidebar-tabs {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        flex-shrink: 0;
+      }
+
+      .sidebar-content {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .sidebar-panel {
+        min-height: 0;
+      }
+
+      /* Map wrapper fills sidebar panel */
+      .map-wrapper {
+        flex: 1;
+        min-height: 0;
+      }
+
+      /* Map container: collapsed by default (info only visible) */
+      .map-container {
+        flex: none;
+        min-height: 0;
+        max-height: 0;
+        opacity: 0;
+        overflow: hidden;
+        position: relative;
+        transition: max-height 0.42s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.35s ease;
+      }
+
+      /* Expanded: map slides down to fill entire sidebar */
+      .map-container.expanded {
+        max-height: 100vh;
+        opacity: 1;
+        flex: none;
+        height: 100%;
+        min-height: 0;
+      }
+
+      .map-container.expanded~.map-info-section {
+        max-height: 0;
+        opacity: 0;
+        overflow: hidden;
+      }
+
+      /* Map info transitions */
+      .map-info-section {
+        transition: max-height 0.38s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.32s ease;
+      }
+
+      /* Map expand/collapse button - always visible on the card */
+      .map-expand-btn {
+        display: flex;
+      }
+    }
+
+    @media (max-width:480px) {
+      .main {
+        padding: 8px;
+        gap: 8px;
+      }
+
+      .content-area {
+        flex: 0 0 40vh;
+        min-height: 220px;
+      }
+
+      .camera-section {
+        border-radius: var(--radius-lg);
+      }
+
+      .camera-controls {
+        gap: 6px;
+        padding: 8px;
+      }
+
+      .camera-controls .btn {
+        font-size: 11px;
+        height: 36px;
+      }
+
+      .sidebar {
+        border-radius: var(--radius-lg);
+      }
+
+      .footer {
+        height: 48px;
+      }
+
+      .btn svg {
+        width: 14px;
+        height: 14px;
+      }
+    }
+
+
+    @media (max-width:360px) {
+      .content-area {
+        min-height: 160px;
+      }
+
+      .map-expand-btn {
+        width: 38px;
+        height: 38px;
+        top: 8px;
+        right: 8px;
+      }
+
+      .map-expand-btn svg {
+        width: 18px;
+        height: 18px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app-container">
+    <div class="grid-pattern"></div>
+
+    <header class="header">
+      <div class="logo">
+        <div class="logo-icon">
+          <img src="森林.svg" alt="FlameVision Logo" />
+        </div>
+        <div class="logo-text">
+          <span class="logo-title">FlameVision</span>
+          <span class="logo-subtitle">森林火灾检测系统</span>
+        </div>
+      </div>
+      <div class="header-center">
+        <div class="time-display" id="timeDisplay">--:--:--</div>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" id="themeToggle" title="选择主题">
+          <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5" />
+            <line x1="12" y1="1" x2="12" y2="3" />
+            <line x1="12" y1="21" x2="12" y2="23" />
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+            <line x1="1" y1="12" x2="3" y2="12" />
+            <line x1="21" y1="12" x2="23" y2="12" />
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+          </svg>
+        </button>
+        <div class="theme-menu" id="themeMenu">
+          <button class="theme-menu-item" data-theme="auto">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="5" />
+              <circle cx="12" cy="12" r="5" stroke-dasharray="4 4" />
+              <line x1="12" y1="1" x2="12" y2="3" />
+              <line x1="12" y1="21" x2="12" y2="23" />
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+              <line x1="1" y1="12" x2="3" y2="12" />
+              <line x1="21" y1="12" x2="23" y2="12" />
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+            </svg>
+            <span>自动</span>
+            <svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </button>
+          <button class="theme-menu-item" data-theme="light">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="5" />
+              <line x1="12" y1="1" x2="12" y2="3" />
+              <line x1="12" y1="21" x2="12" y2="23" />
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+              <line x1="1" y1="12" x2="3" y2="12" />
+              <line x1="21" y1="12" x2="23" y2="12" />
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+            </svg>
+            <span>浅色</span>
+            <svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </button>
+          <button class="theme-menu-item" data-theme="dark">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+            <span>深色</span>
+            <svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="main">
+      <div class="content-area" id="contentArea">
+        <section class="camera-section">
+          <div class="camera-header">
+            <div class="camera-title">
+              <h2>检测视区</h2>
+            </div>
+            <div class="fps-badge" id="fpsDisplay">-- FPS</div>
+          </div>
+          <div class="video-wrapper" id="videoContainer">
+            <video id="video" autoplay playsinline muted></video>
+            <div class="detection-overlay" id="detectionOverlay"></div>
+            <div class="video-placeholder" id="cameraPlaceholder">
+              <div class="video-placeholder-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                  <circle cx="12" cy="13" r="4" />
+                </svg>
+              </div>
+              <h3>视频流检测未开始</h3>
+              <p>开启摄像头或选择视频文件开始识别</p>
+            </div>
+          </div>
+          <div class="camera-controls">
+            <button class="btn btn-primary" id="toggleCamera">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="23 7 16 12 23 17 23 7" />
+                <rect x="1" y="5" width="15" height="14" rx="2" />
+              </svg>
+              <span>摄像头</span>
+            </button>
+            <button class="btn btn-secondary" id="selectVideo">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+                <line x1="7" y1="2" x2="7" y2="22" />
+                <line x1="17" y1="2" x2="17" y2="22" />
+                <line x1="2" y1="12" x2="22" y2="12" />
+                <line x1="2" y1="7" x2="7" y2="7" />
+                <line x1="2" y1="17" x2="7" y2="17" />
+                <line x1="17" y1="17" x2="22" y2="17" />
+                <line x1="17" y1="7" x2="22" y2="7" />
+              </svg>
+              <span>视频文件</span>
+            </button>
+            <input type="file" class="file-input-hidden" id="videoFileInput" accept="video/*" />
+            <button class="btn btn-secondary" id="pauseDetection" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="6" y="4" width="4" height="16" />
+                <rect x="14" y="4" width="4" height="16" />
+              </svg>
+              <span>暂停</span>
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-tabs">
+          <button class="sidebar-tab active" data-tab="map">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+              <circle cx="12" cy="10" r="3" />
+            </svg>
+            <span>地图</span>
+          </button>
+          <button class="sidebar-tab" data-tab="log">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+            </svg>
+            <span>记录</span>
+          </button>
+        </div>
+        <div class="sidebar-content">
+          <div class="sidebar-panel active" id="panel-map">
+            <div class="map-wrapper">
+              <div class="map-container">
+                <div id="map"></div>
+                <div class="map-placeholder" id="mapPlaceholder">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                    <circle cx="12" cy="10" r="3" />
+                  </svg>
+                  <p>点击下方按钮获取位置</p>
+                </div>
+              </div>
+              <button class="map-expand-btn" id="mapExpandBtn" title="展开地图">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+              <div class="map-info-section">
+                <div class="map-actions">
+                  <div class="toggle-wrap">
+                    <span class="toggle-label">自动刷新</span>
+                    <div class="toggle-switch" id="autoRefreshToggle"></div>
+                  </div>
+                  <button class="btn btn-primary" id="refreshLocation">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                      <polyline points="23 4 23 10 17 10" />
+                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                    </svg>
+                    <span>刷新定位</span>
+                  </button>
+                  <button class="btn btn-secondary" id="clearPath">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                    <span>清除</span>
+                  </button>
+                </div>
+                <div class="coords-grid">
+                  <div class="coord-item">
+                    <div class="coord-label">经度</div>
+                    <div class="coord-value" id="longitude">--</div>
+                  </div>
+                  <div class="coord-item">
+                    <div class="coord-label">纬度</div>
+                    <div class="coord-value" id="latitude">--</div>
+                  </div>
+                </div>
+                <div class="fire-point-card" id="firePointCard">
+                  <div class="fire-point-label">检测火点</div>
+                  <div class="fire-point-value" id="firePoints">0</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="sidebar-panel" id="panel-log">
+            <div class="log-panel">
+              <div class="log-header">
+                <span class="log-title">检测记录</span>
+                <div class="log-header-actions">
+                  <div class="btn btn-secondary" id="exportCSV"
+                    style="height:32px;font-size:11px;padding:0 12px;cursor:pointer;" onclick="exportCSV()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    <span>导出 CSV</span>
+                  </div>
+                  <div class="btn btn-danger" id="clearLog"
+                    style="height:32px;font-size:11px;padding:0 12px;cursor:pointer;" onclick="DetectionLog.clear()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                    <span>全部清除</span>
+                  </div>
+                </div>
+              </div>
+              <div class="log-list" id="detectionLog">
+                <div class="log-empty">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  <p>暂无检测记录</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="footer">
+      <div class="status-indicator">
+        <span class="status-dot" id="statusDot"></span>
+        <span class="status-text" id="statusText">正在加载模型...</span>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    // ==================== FlameVision Core ====================
+    const CONFIG = {
+      modelUrl: 'https://hk.gh-proxy.org/https://raw.githubusercontent.com/xixi77-gif/fire-detection/main/best.onnx',
+      imgsz: 640,
+      confThreshold: 0.25,
+      frameSkip: 2,
+    };
+
+    const CLASSES = {
+      0: { name: 'Fire', color: '#ef4444' },
+      1: { name: 'default', color: '#f59e0b' },
+      2: { name: 'smoke', color: '#94a3b8' },
+    };
+
+    const STATE = {
+      session: null,
+      modelReady: false,
+      cameraActive: false,
+      videoActive: false,
+      detecting: false,
+      paused: false,
+      fps: 0,
+      frameTimes: [],
+      detectionLog: [],
+      // MapModule state (from wastevision)
+      map: null,
+      marker: null,
+      pathLine: null,
+      pathCoordinates: [],
+      pathData: [],
+      totalDistance: 0,
+      minDisplacement: 5,
+      currentPos: null,
+      mapMarkers: [],
+      autoRefreshActive: false,
+      autoRefreshInterval: null,
+      statusResetTimer: null,
+      statusReadyTriggered: false,
+      mapExpanded: false,
+    };
+
+    // ==================== DOM Refs ====================
+    const $ = id => document.getElementById(id);
+    const dom = {
+      video: $('video'),
+      videoContainer: $('videoContainer'),
+      cameraPlaceholder: $('cameraPlaceholder'),
+      detectionOverlay: $('detectionOverlay'),
+      toggleCamera: $('toggleCamera'),
+      selectVideo: $('selectVideo'),
+      videoFileInput: $('videoFileInput'),
+      pauseDetection: $('pauseDetection'),
+      fpsDisplay: $('fpsDisplay'),
+      statusDot: $('statusDot'),
+      statusText: $('statusText'),
+      timeDisplay: $('timeDisplay'),
+      themeToggle: $('themeToggle'),
+      detectionLog: $('detectionLog'),
+      mapPlaceholder: $('mapPlaceholder'),
+      longitude: $('longitude'),
+      latitude: $('latitude'),
+      firePoints: $('firePoints'),
+      firePointCard: $('firePointCard'),
+      clearPath: $('clearPath'),
+      refreshLocation: $('refreshLocation'),
+      autoRefreshToggle: $('autoRefreshToggle'),
+      mapExpandBtn: $('mapExpandBtn'),
+    };
+
+    // ==================== Model Loading ====================
+    function setStatus(text, type) {
+      if (STATE.statusResetTimer) {
+        clearTimeout(STATE.statusResetTimer);
+        STATE.statusResetTimer = null;
+      }
+
+      if (type === 'error') {
+        dom.statusDot.className = 'status-dot error';
+        dom.statusText.textContent = text;
+        return;
+      }
+
+      if (type === 'loading') {
+        dom.statusDot.className = 'status-dot';
+        dom.statusText.textContent = text;
+        return;
+      }
+
+      dom.statusDot.className = 'status-dot ready';
+      dom.statusText.textContent = text;
+
+      if (STATE.statusReadyTriggered) {
+        STATE.statusResetTimer = setTimeout(() => {
+          dom.statusDot.className = 'status-dot ready';
+          dom.statusText.textContent = '系统就绪';
+        }, 5000);
+      }
+
+      STATE.statusReadyTriggered = true;
+    }
+    async function loadModel() {
+      try {
+        setStatus('正在加载模型...', 'loading');
+        const session = await ort.InferenceSession.create(CONFIG.modelUrl, {
+          executionProviders: ['webgl', 'wasm'],
+          graphOptimizationLevel: 'all',
+        });
+        STATE.session = session;
+        STATE.modelReady = true;
+        setStatus('模型加载完毕', 'success');
+        dom.toggleCamera.disabled = false;
+        dom.selectVideo.disabled = false;
+      } catch (err) {
+        console.error('Model load failed:', err);
+        setStatus('模型加载失败: ' + err.message, 'error');
+      }
+    }
+
+    // ==================== Preprocessing ====================
+    function preprocessImageData(imageData) {
+      const pixels = imageData.data;
+      const input = new Float32Array(3 * CONFIG.imgsz * CONFIG.imgsz);
+      const area = CONFIG.imgsz * CONFIG.imgsz;
+      for (let i = 0; i < area; i++) {
+        input[i] = pixels[i * 4] / 255.0;
+        input[i + area] = pixels[i * 4 + 1] / 255.0;
+        input[i + 2 * area] = pixels[i * 4 + 2] / 255.0;
+      }
+      return new ort.Tensor('float32', input, [1, 3, CONFIG.imgsz, CONFIG.imgsz]);
+    }
+
+    // ==================== Inference ====================
+    async function runInference(imageData) {
+      if (!STATE.session) return [];
+      const inputTensor = preprocessImageData(imageData);
+      const feeds = { images: inputTensor };
+      const results = await STATE.session.run(feeds);
+      const output = results[Object.keys(results)[0]];
+      const data = output.data;
+      const detections = [];
+      const numDet = output.dims[1];
+      for (let i = 0; i < numDet; i++) {
+        const off = i * 6;
+        const score = data[off + 4];
+        if (score < CONFIG.confThreshold) continue;
+        detections.push({
+          x1: data[off + 0], y1: data[off + 1],
+          x2: data[off + 2], y2: data[off + 3],
+          score: score,
+          classId: Math.round(data[off + 5]),
+        });
+      }
+      return detections;
+    }
+
+    // ==================== Drawing ====================
+    function drawDetections(detections) {
+      const overlay = dom.detectionOverlay;
+      overlay.innerHTML = '';
+      const ow = overlay.offsetWidth;
+      const oh = overlay.offsetHeight;
+      if (!ow || !oh) return;
+      const sx = ow / CONFIG.imgsz;
+      const sy = oh / CONFIG.imgsz;
+
+      for (const det of detections) {
+        const cls = CLASSES[det.classId] || CLASSES[1];
+        const box = document.createElement('div');
+        box.className = 'detection-box';
+        box.style.left = (det.x1 * sx) + 'px';
+        box.style.top = (det.y1 * sy) + 'px';
+        box.style.width = ((det.x2 - det.x1) * sx) + 'px';
+        box.style.height = ((det.y2 - det.y1) * sy) + 'px';
+        box.style.borderColor = cls.color;
+
+        const label = document.createElement('div');
+        label.className = 'detection-label';
+        label.style.backgroundColor = cls.color;
+        label.textContent = cls.name + ' ' + Math.round(det.score * 100) + '%';
+
+        const boxTop = det.y1 * sy;
+        if (boxTop < 26) {
+          label.style.top = 'auto';
+          label.style.bottom = '-26px';
+          label.style.borderRadius = '0 0 var(--radius-sm) var(--radius-sm)';
+        }
+        box.appendChild(label);
+        overlay.appendChild(box);
+      }
+    }
+
+    // ==================== Frame Processing ====================
+    let frameCount = 0;
+
+    function updateFPS() {
+      const now = performance.now();
+      STATE.frameTimes.push(now);
+      while (STATE.frameTimes.length > 0 && STATE.frameTimes[0] < now - 1000) {
+        STATE.frameTimes.shift();
+      }
+      STATE.fps = STATE.frameTimes.length;
+      dom.fpsDisplay.textContent = STATE.fps + ' FPS';
+    }
+
+    // ==================== Capture & Process Frame ====================
+    function captureFrame() {
+      const video = dom.video;
+      const c = document.createElement('canvas');
+      c.width = CONFIG.imgsz;
+      c.height = CONFIG.imgsz;
+      const ctx = c.getContext('2d');
+
+      const vw = video.videoWidth || 640;
+      const vh = video.videoHeight || 480;
+      const scale = Math.max(CONFIG.imgsz / vw, CONFIG.imgsz / vh);
+      const dw = vw * scale;
+      const dh = vh * scale;
+      const dx = (CONFIG.imgsz - dw) / 2;
+      const dy = (CONFIG.imgsz - dh) / 2;
+
+      ctx.drawImage(video, dx, dy, dw, dh);
+      return ctx.getImageData(0, 0, CONFIG.imgsz, CONFIG.imgsz);
+    }
+
+    async function processFrame() {
+      if (!STATE.modelReady || STATE.paused) return;
+      try {
+        const imageData = captureFrame();
+        const detections = await runInference(imageData);
+        drawDetections(detections);
+        DetectionLog.add(detections);
+        updateFPS();
+      } catch (e) {
+        console.error('Frame processing error:', e);
+      }
+    }
+
+    // ==================== Detection Loop ====================
+    let detectionRAF = null;
+
+    async function detectionLoop() {
+      if (!STATE.detecting) return;
+      detectionRAF = requestAnimationFrame(detectionLoop);
+      frameCount++;
+      if (frameCount % CONFIG.frameSkip !== 0) return;
+      await processFrame();
+    }
+
+    function startDetection() {
+      if (STATE.detecting) return;
+      STATE.detecting = true;
+      STATE.paused = false;
+      frameCount = 0;
+      STATE.frameTimes = [];
+      dom.pauseDetection.disabled = false;
+      dom.pauseDetection.querySelector('span').textContent = '暂停';
+      dom.videoContainer.classList.add('active');
+      dom.cameraPlaceholder.style.display = 'none';
+      dom.video.style.display = 'block';
+      detectionLoop();
+    }
+
+    function stopDetection() {
+      STATE.detecting = false;
+      STATE.paused = false;
+      if (detectionRAF) { cancelAnimationFrame(detectionRAF); detectionRAF = null; }
+      dom.pauseDetection.disabled = true;
+      dom.pauseDetection.querySelector('span').textContent = '暂停';
+      dom.detectionOverlay.innerHTML = '';
+      dom.fpsDisplay.textContent = '-- FPS';
+    }
+
+    // ==================== Camera ====================
+    let cameraStream = null;
+
+    async function startCamera() {
+      if (STATE.cameraActive) {
+        stopAll();
+        return;
+      }
+      if (STATE.videoActive) {
+        stopVideoSource();
+      }
+      try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 640 } },
+          audio: false,
+        });
+        dom.video.srcObject = cameraStream;
+        await dom.video.play();
+        STATE.cameraActive = true;
+        dom.toggleCamera.querySelector('span').textContent = '关闭摄像头';
+        dom.toggleCamera.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+        startDetection();
+      } catch (err) {
+        console.error('Camera error:', err);
+        alert('无法访问摄像头: ' + err.message);
+      }
+    }
+
+    function stopCamera() {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(t => t.stop());
+        cameraStream = null;
+      }
+      STATE.cameraActive = false;
+      dom.toggleCamera.querySelector('span').textContent = '摄像头';
+      dom.toggleCamera.style.background = '';
+      dom.video.srcObject = null;
+    }
+
+    // ==================== Video File ====================
+    function stopVideoSource() {
+      dom.video.pause();
+      if (dom.video.src) {
+        URL.revokeObjectURL(dom.video.src);
+        dom.video.removeAttribute('src');
+      }
+      dom.video.srcObject = null;
+      STATE.videoActive = false;
+    }
+
+    function stopAll() {
+      stopDetection();
+      stopCamera();
+      stopVideoSource();
+      dom.video.style.display = 'none';
+      dom.videoContainer.classList.remove('active');
+      dom.cameraPlaceholder.style.display = '';
+    }
+
+    function selectVideoFile() {
+      dom.videoFileInput.click();
+    }
+
+    dom.videoFileInput.addEventListener('change', function () {
+      const file = this.files[0];
+      if (!file) return;
+      stopAll();
+      const url = URL.createObjectURL(file);
+      dom.video.src = url;
+      dom.video.loop = true;
+      dom.video.muted = true;
+      STATE.videoActive = true;
+      dom.video.onloadedmetadata = async () => {
+        await dom.video.play();
+        startDetection();
+      };
+    });
+
+    // ==================== Pause ====================
+    function togglePause() {
+      STATE.paused = !STATE.paused;
+      if (STATE.paused) {
+        dom.video.pause();
+      } else {
+        dom.video.play().catch(e => console.error('Video resume error:', e));
+      }
+      dom.pauseDetection.querySelector('span').textContent = STATE.paused ? '继续' : '暂停';
+    }
+
+    // ==================== MapModule (reused from wastevision) ====================
+    const MapModule = {
+      init() {
+        STATE.map = L.map('map', {
+          zoomControl: false,
+          attributionControl: false,
+        }).setView([39.9042, 116.4074], 13);
+
+        L.tileLayer(
+          'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
+          {
+            maxZoom: 18,
+            subdomains: ['1', '2', '3', '4'],
+          }
+        ).addTo(STATE.map);
+
+        STATE.pathLine = L.polyline([], {
+          color: '#10b981',
+          weight: 4,
+          opacity: 0.8,
+        }).addTo(STATE.map);
+      },
+
+      updateDisplay(lat, lng) {
+        dom.longitude.textContent = lng.toFixed(6);
+        dom.latitude.textContent = lat.toFixed(6);
+        const latlng = [lat, lng];
+        STATE.map.setView(latlng, 15);
+        if (STATE.marker) {
+          STATE.marker.setLatLng(latlng);
+        } else {
+          STATE.marker = L.marker(latlng)
+            .addTo(STATE.map)
+            .bindPopup('当前位置');
+        }
+        STATE.currentPos = { lat, lng };
+        dom.mapPlaceholder.style.display = 'none';
+      },
+
+      calculateDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371000;
+        const dLat = ((lat2 - lat1) * Math.PI) / 180;
+        const dLon = ((lon2 - lon1) * Math.PI) / 180;
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos((lat1 * Math.PI) / 180) *
+          Math.cos((lat2 * Math.PI) / 180) *
+          Math.sin(dLon / 2) *
+          Math.sin(dLon / 2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      },
+
+      addPathPoint(lat, lng, force = false) {
+        const time = new Date();
+        if (STATE.pathCoordinates.length > 0 && !force) {
+          const lastPoint = STATE.pathCoordinates[STATE.pathCoordinates.length - 1];
+          const distance = this.calculateDistance(lastPoint[0], lastPoint[1], lat, lng);
+          if (distance < STATE.minDisplacement) return false;
+          STATE.totalDistance += distance;
+        }
+        STATE.pathCoordinates.push([lat, lng]);
+        STATE.pathData.push({
+          lat, lng,
+          timestamp: time.toISOString(),
+          distance: STATE.totalDistance,
+        });
+        if (STATE.pathLine) STATE.pathLine.setLatLngs(STATE.pathCoordinates);
+        return true;
+      },
+
+      getLocation() {
+        if (!navigator.geolocation) {
+          alert('您的浏览器不支持地理定位');
+          return;
+        }
+        setStatus('正在获取位置...', 'loading');
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            this.updateDisplay(lat, lng);
+            setStatus('位置已更新', 'success');
+          },
+          (error) => {
+            alert('定位失败: ' + error.message);
+            setStatus('定位失败', 'error');
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+      },
+
+      toggleAutoRefresh() {
+        STATE.autoRefreshActive = !STATE.autoRefreshActive;
+        dom.autoRefreshToggle.classList.toggle('active', STATE.autoRefreshActive);
+        dom.refreshLocation.disabled = STATE.autoRefreshActive;
+        if (STATE.autoRefreshActive) {
+          this.getLocation();
+          STATE.autoRefreshInterval = setInterval(() => this.getLocation(), 5000);
+        } else {
+          if (STATE.autoRefreshInterval) {
+            clearInterval(STATE.autoRefreshInterval);
+            STATE.autoRefreshInterval = null;
+          }
+        }
+      },
+
+      clearPath() {
+        STATE.pathCoordinates = [];
+        STATE.pathData = [];
+        STATE.totalDistance = 0;
+        if (STATE.pathLine) STATE.pathLine.setLatLngs([]);
+      },
+    };
+
+    // Fire detection marker on map
+    function addFireMarker(lat, lng, detections) {
+      if (!STATE.map) return;
+      for (const m of STATE.mapMarkers) {
+        const pos = m.getLatLng();
+        if (Math.abs(pos.lat - lat) < 0.01 && Math.abs(pos.lng - lng) < 0.01) return;
+      }
+      const hasFire = detections.some(d => d.classId === 0);
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="width:18px;height:18px;border-radius:50%;background:${hasFire ? '#ef4444' : '#94a3b8'};border:3px solid #fff;box-shadow:0 0 12px ${hasFire ? '#ef4444' : '#94a3b8'};transform:translate(-50%,-50%);"></div>`,
+        iconSize: [18, 18],
+        iconAnchor: [9, 9],
+      });
+      const marker = L.marker([lat, lng], { icon }).addTo(STATE.map);
+      marker.bindPopup(
+        detections.map(d => {
+          const cls = CLASSES[d.classId] || CLASSES[1];
+          return `<b style="color:${cls.color}">${cls.name}</b> ${Math.round(d.score * 100)}%`;
+        }).join('<br>')
+      );
+      STATE.mapMarkers.push(marker);
+      dom.firePoints.textContent = STATE.mapMarkers.length;
+      dom.firePointCard.classList.toggle('alert', STATE.mapMarkers.length > 0);
+    }
+
+    // ==================== DetectionLog (reused from wastevision) ====================
+    const DetectionLog = {
+      add(detections) {
+        if (detections.length === 0) return;
+        const log = dom.detectionLog;
+        const emptyMsg = log.querySelector('.log-empty');
+        if (emptyMsg) emptyMsg.remove();
+
+        for (const det of detections) {
+          const cls = CLASSES[det.classId] || CLASSES[1];
+          const now = new Date();
+          const entry = document.createElement('div');
+          entry.className = 'log-entry';
+          entry.innerHTML = `
+        <div class="log-dot" style="background:${cls.color};box-shadow:0 0 6px ${cls.color}"></div>
+        <div class="log-entry-details">
+          <div class="log-entry-class">${cls.name}</div>
+          <div class="log-entry-meta">${now.toLocaleTimeString('zh-CN', { hour12: false })}${STATE.currentPos ? ' · ' + STATE.currentPos.lat.toFixed(4) + ', ' + STATE.currentPos.lng.toFixed(4) : ''}</div>
+        </div>
+        <div class="log-entry-conf" style="color:${cls.color}">${Math.round(det.score * 100)}%</div>
+      `;
+          log.insertBefore(entry, log.firstChild);
+
+          STATE.detectionLog.unshift({
+            time: now.toISOString(),
+            classId: det.classId,
+            className: cls.name,
+            confidence: det.score || det.confidence,
+            lat: STATE.currentPos ? STATE.currentPos.lat : null,
+            lng: STATE.currentPos ? STATE.currentPos.lng : null,
+          });
+        }
+
+        while (STATE.detectionLog.length > 200) STATE.detectionLog.pop();
+        while (log.children.length > 50) log.removeChild(log.lastChild);
+
+        if (STATE.currentPos && detections.some(d => d.classId === 0 || d.classId === 2)) {
+          addFireMarker(STATE.currentPos.lat, STATE.currentPos.lng, detections);
+        }
+      },
+
+      clear() {
+        STATE.detectionLog = [];
+        dom.detectionLog.innerHTML = `
+      <div class="log-empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <p>暂无检测记录</p>
+      </div>
+    `;
+      },
+    };
+
+    function exportCSV() {
+      if (STATE.detectionLog.length === 0) return;
+      let csv = 'time,class,confidence,latitude,longitude\n';
+      for (const e of STATE.detectionLog) {
+        csv += `${e.time},${e.className},${e.confidence.toFixed(3)},${e.lat ?? ''},${e.lng ?? ''}\n`;
+      }
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'flamevision-detections.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // ==================== Theme ====================
+    const THEME_MODES = ['auto', 'light', 'dark'];
+    const THEME_LABELS = { auto: '自动主题', light: '浅色主题', dark: '深色主题' };
+
+    function getSystemTheme() {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+
+    function applyTheme(mode) {
+      const html = document.documentElement;
+      const effectiveTheme = mode === 'auto' ? getSystemTheme() : mode;
+      html.setAttribute('data-theme', effectiveTheme);
+      html.setAttribute('data-theme-mode', mode);
+      updateThemeIcon(effectiveTheme, mode);
+    }
+
+    function updateThemeIcon(effectiveTheme, mode) {
+      const icon = document.getElementById('themeIcon');
+      const btn = document.getElementById('themeToggle');
+      if (mode === 'auto') {
+        icon.innerHTML = `<circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="5" stroke-dasharray="4 4"/>
+      <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+      <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>`;
+      } else if (effectiveTheme === 'dark') {
+        icon.innerHTML = `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>`;
+      } else {
+        icon.innerHTML = `<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/>
+      <line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/>
+      <line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>`;
+      }
+      btn.title = THEME_LABELS[mode];
+      document.querySelectorAll('.theme-menu-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.theme === mode);
+      });
+    }
+
+    function toggleTheme() {
+      const menu = document.getElementById('themeMenu');
+      menu.classList.toggle('show');
+    }
+
+    function selectTheme(mode) {
+      applyTheme(mode);
+      try { localStorage.setItem('flamevision-theme', mode); } catch (e) { }
+      document.getElementById('themeMenu').classList.remove('show');
+    }
+
+    (function () {
+      try {
+        const saved = localStorage.getItem('flamevision-theme') || 'auto';
+        applyTheme(saved);
+      } catch (e) {
+        applyTheme('auto');
+      }
+    })();
+
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (document.documentElement.getAttribute('data-theme-mode') === 'auto') {
+        applyTheme('auto');
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      const menu = document.getElementById('themeMenu');
+      const btn = document.getElementById('themeToggle');
+      if (!menu.contains(e.target) && !btn.contains(e.target)) {
+        menu.classList.remove('show');
+      }
+    });
+
+    // ==================== Clock ====================
+    function updateClock() {
+      const now = new Date();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const timeStr = now.toLocaleTimeString('zh-CN', { hour12: false });
+      dom.timeDisplay.textContent = month + '月' + day + '日 ' + timeStr;
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // ==================== Event Bindings ====================
+    dom.toggleCamera.addEventListener('click', startCamera);
+    dom.selectVideo.addEventListener('click', selectVideoFile);
+    dom.pauseDetection.addEventListener('click', togglePause);
+    dom.themeToggle.addEventListener('click', toggleTheme);
+
+    document.querySelectorAll('.theme-menu-item').forEach(item => {
+      item.addEventListener('click', () => selectTheme(item.dataset.theme));
+    });
+    dom.clearPath.addEventListener('click', () => MapModule.clearPath());
+    dom.refreshLocation.addEventListener('click', () => MapModule.getLocation());
+    dom.autoRefreshToggle.addEventListener('click', () => MapModule.toggleAutoRefresh());
+
+    // Sidebar tabs
+    let lastActiveTab = 'map';
+    document.querySelectorAll('.sidebar-tab').forEach(tab => {
+      tab.addEventListener('click', function () {
+        const newTab = this.dataset.tab;
+        if (newTab === lastActiveTab) return;
+        const goingRight = (lastActiveTab === 'map' && newTab === 'log');
+        const oldPanel = document.getElementById('panel-' + lastActiveTab);
+        const newPanel = document.getElementById('panel-' + newTab);
+
+        document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+        this.classList.add('active');
+
+        oldPanel.classList.add(goingRight ? 'slide-out-left' : 'slide-out-right');
+        oldPanel.classList.remove('active');
+
+        newPanel.style.transition = 'none';
+        newPanel.style.transform = goingRight ? 'translateX(60px)' : 'translateX(-60px)';
+        newPanel.style.opacity = '0';
+        newPanel.classList.remove('slide-out-left', 'slide-out-right');
+        newPanel.classList.add('active');
+
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            newPanel.style.transition = '';
+            newPanel.style.transform = '';
+            newPanel.style.opacity = '';
+          });
+        });
+
+        lastActiveTab = newTab;
+
+        if (newTab === 'map') {
+          setTimeout(() => { if (STATE.map) STATE.map.invalidateSize(); }, 400);
+        }
+      });
+    });
+
+    // ==================== Keyboard Shortcuts ====================
+    document.addEventListener('keydown', function (e) {
+      switch (e.key.toLowerCase()) {
+        case 'c': dom.toggleCamera.click(); break;
+        case 'v': dom.selectVideo.click(); break;
+        case ' ': e.preventDefault(); dom.pauseDetection.click(); break;
+      }
+    });
+
+    // ==================== Map Expand/Collapse ====================
+    function toggleMapExpand() {
+      STATE.mapExpanded = !STATE.mapExpanded;
+      const mapContainer = document.querySelector('.map-container');
+      const expandBtn = dom.mapExpandBtn;
+
+      if (STATE.mapExpanded) {
+        mapContainer.classList.add('expanded');
+        expandBtn.classList.add('active');
+      } else {
+        mapContainer.classList.remove('expanded');
+        expandBtn.classList.remove('active');
+      }
+
+      setTimeout(() => {
+        if (STATE.map) STATE.map.invalidateSize();
+      }, 300);
+    }
+
+    dom.mapExpandBtn.addEventListener('click', toggleMapExpand);
+
+    // ==================== Init ====================
+    function init() {
+      dom.toggleCamera.disabled = true;
+      dom.selectVideo.disabled = true;
+      dom.pauseDetection.disabled = true;
+      MapModule.init();
+      MapModule.getLocation();
+      loadModel();
+    }
+    init();
+  </script>
+</body>
+
+</html>
